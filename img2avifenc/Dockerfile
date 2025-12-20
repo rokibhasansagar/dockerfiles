@@ -25,7 +25,7 @@ RUN --mount=type=secret,id=RCLONE_CONFIG_HASH,uid=1000 <<-'EOL'
 	rm *.zip ./rcl.log *.rclone.config
 	# Install aom (psy101-git)
 	rclone copy "ms365:Public/ArchVapourBuilds/native/Step_Zero2/" --include="aom-psy101-git-*.pkg.tar.zst" . --fast-list -v 2>/dev/null
-	sudo pacman -U --noconfirm aom-psy-101-git-*.pkg.tar.zst
+	sudo pacman -U --noconfirm aom-psy101-git-*.pkg.tar.zst
 	sudo sed -i '/^#IgnorePkg/c\IgnorePkg = aom' /etc/pacman.conf 2>/dev/null
 	# Install imagemagick
 	sudo pacman -S --noconfirm --needed imagemagick libavif
