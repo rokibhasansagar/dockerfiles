@@ -11,6 +11,7 @@ on:
     branches: [ "main" ]
     paths:
       - 'img2avifenc/Dockerfile'
+      - '.github/workflows/img2avifenc.yml'
 
 env:
   # Use docker.io for Docker Hub if empty
