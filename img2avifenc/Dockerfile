@@ -8,7 +8,6 @@ FROM fr3akyphantom/archy-base:latest
 SHELL ["/bin/bash", "-c"]
 
 RUN --mount=type=secret,id=RCLONE_CONFIG_HASH,uid=1000 <<-'EOL'
-	echo -e "TARGETPLATFORM=${TARGETPLATFORM} and BUILDPLATFORM=${BUILDPLATFORM}"
 	# Update System Immediately
 	( sudo pacman -Syu --noconfirm 2>/dev/null ) || ( sudo pacman -Syu --noconfirm 2>/dev/null || true )
 	( sudo rm -rvf /var/cache/pacman/pkg/*.pkg.tar.zst* 2>/dev/null || true )
@@ -30,7 +29,7 @@ RUN --mount=type=secret,id=RCLONE_CONFIG_HASH,uid=1000 <<-'EOL'
 	# Install imagemagick
 	sudo pacman -S --noconfirm --needed imagemagick libavif
 	# Install others
-	sudo pacman -S --noconfirm --needed mediainfo
+	sudo pacman -S --noconfirm --needed mediainfo vmaf
 	if command -v avifenc 2>/dev/null; then avifenc --version; fi
 	# Cleanup
 	sudo rm -rvf ~/.config/rclone/rclone.conf
