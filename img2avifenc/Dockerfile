@@ -14,8 +14,8 @@ RUN --mount=type=secret,id=RCLONE_CONFIG_HASH,uid=1000 <<-'EOL'
 	( sudo rm -rvf /var/cache/pacman/pkg/*.pkg.tar.zst* 2>/dev/null || true )
 	set -ex
 	export PATH="/usr/local/bin:/usr/bin:/usr/local/sbin:/usr/sbin:/sbin:/bin"
-	# Setup rclone
-	sudo pacman -S --noconfirm --needed rclone
+	# Setup rclone and unzip
+	sudo pacman -S --noconfirm --needed rclone unzip
 	# Setup personal rclone config
 	export RCLONE_CONFIG_HASH=$(< /run/secrets/RCLONE_CONFIG_HASH) || true
 	mkdir -p ~/.config/rclone
