@@ -1,12 +1,17 @@
-name: img2avifenc @Docker
-
-# This workflow uses actions that are not certified by GitHub.
-# They are provided by a third-party and are governed by
-# separate terms of service, privacy policy, and support
-# documentation.
+name: img2avifenc
 
 on:
   workflow_dispatch:
+    inputs:
+      jobType:
+        description: 'Select Job to Run'
+        required: true
+        default: 'build'
+        type: choice
+        options:
+          - build
+          - test
+          - all
   push:
     branches: [ "main" ]
     paths:
@@ -14,44 +19,37 @@ on:
       - '.github/workflows/img2avifenc.yml'
 
 env:
-  # Use docker.io for Docker Hub if empty
-  REGISTRY: "ghcr.io"
-  # github.repository as <account>/<repo>
+  REGISTRY: "${{ vars.REGISTRY }}"  # "ghcr.io"
   IMAGE_NAME: "${{ github.repository_owner }}/img2avifenc"
-  RCLONE_CONFIG_HASH: "e3ae1975eb92f351c4acfa1fc23c7ca4"
+  RCLONE_CONFIG_HASH: ${{ secrets.RCLONE_CONFIG_HASH }}
 
 jobs:
-  build:
 
+  build:
     runs-on: ubuntu-latest
+    # Run if:
+    # 1. It is a Push event
+    # 2. OR Dispatch is 'build'
+    # 3. OR Dispatch is 'all'
+    if: ${{ github.event_name == 'push' || github.event.inputs.jobType == 'build' || github.event.inputs.jobType == 'all' }}
+
     permissions:
       contents: read
       packages: write
-      # This is used to complete the identity challenge
-      # with sigstore/fulcio when running outside of PRs.
       id-token: write
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
 
-      # Install the cosign tool except on PR
-      # https://github.com/sigstore/cosign-installer
       - name: Install cosign
         uses: sigstore/cosign-installer@v4.0.0
         with:
           cosign-release: 'v3.0.2'
 
-      # Set up BuildKit Docker container builder to be able to build
-      # multi-platform images and export cache
-      # https://github.com/docker/setup-buildx-action
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
-        with:
-          install: true
 
-      # Login against a Docker registry
-      # https://github.com/docker/login-action
       - name: Log into registry ${{ env.REGISTRY }}
         uses: docker/login-action@v3
         with:
@@ -59,8 +57,6 @@ jobs:
           username: ${{ github.repository_owner }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # Extract metadata (tags, labels) for Docker
-      # https://github.com/docker/metadata-action
       - name: Extract Docker metadata
         id: meta
         uses: docker/metadata-action@v5
@@ -69,16 +65,14 @@ jobs:
           tags: |
             type=raw,value=latest,enable={{is_default_branch}}
 
-      # Build and push Docker image with Buildx (don't push on PR)
-      # https://github.com/docker/build-push-action
       - name: Build and push Docker image
         id: build-and-push
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           allow: security.insecure
           context: img2avifenc
           provenance: false
-          push: ${{ github.event_name != 'pull_request' }}
+          push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
@@ -86,17 +80,59 @@ jobs:
           secrets: |
             RCLONE_CONFIG_HASH=${{ env.RCLONE_CONFIG_HASH }}
 
-      # Sign the resulting Docker image digest except on PRs.
-      # This will only write to the public Rekor transparency log when the Docker
-      # repository is public to avoid leaking data.  If you would like to publish
-      # transparency data even for private images, pass --force to cosign below.
-      # https://github.com/sigstore/cosign
       - name: Sign the published Docker image
         env:
-          # https://docs.github.com/en/actions/security-guides/security-hardening-for-github-actions#using-an-intermediate-environment-variable
           TAGS: ${{ steps.meta.outputs.tags }}
           DIGEST: ${{ steps.build-and-push.outputs.digest }}
-        # This step uses the identity token to provision an ephemeral certificate
-        # against the sigstore community Fulcio instance.
         run: echo "${TAGS}" | xargs -I {} cosign sign --yes {}@${DIGEST}
+
+  test:
+    runs-on: ubuntu-latest
+    needs: build
+    # Logic Explanation:
+    # !cancelled() -> Ensures this runs even if 'build' was skipped (e.g. in 'test' only mode)
+    # AND (
+    #   (Push Event AND Build Success) -> Normal CI flow
+    #   OR (Dispatch 'all' AND Build Success) -> Manual full flow
+    #   OR (Dispatch 'test') -> Manual test only (Build skipped/ignored)
+    # )
+    if: >-
+      ${{ 
+        !cancelled() && 
+        (
+          (github.event_name == 'push' && needs.build.result == 'success') || 
+          (github.event.inputs.jobType == 'all' && needs.build.result == 'success') || 
+          (github.event.inputs.jobType == 'test')
+        ) 
+      }}
+
+    # We define the container here dynamically using the top-level env vars
+    container:
+      image: ${{ vars.REGISTRY }}/rokibhasansagar/img2avifenc:latest
+      volumes:
+        - tmp:/data
+
+    steps:
+      - name: Check Environment
+        run: |
+          command -v avifenc || true
+          avifenc --help
+
+      - name: Run Test Workload
+        run: |
+          set -x
+          cd /data
+          # Download sample
+          curl -sL "https://github.blog/wp-content/uploads/2025/12/527215072-2cd64986-d18e-4a0f-a6f6-fbac2b4d7555.jpg?w=1536" -o input.jpg && echo
+
+          # Run encode loop
+          for qual in 36 45 50 60; do
+            avifenc -q ${qual} --speed 0 --codec ${codec:-aom} --depth 12 --cicp 1/13/1 -a sb-size=64 -a tune=iq --output output_q${qual}.avif input.jpg 1>/dev/null
+            # Upload result
+            curl -s -F "file=@output_q${qual}.avif" https://temp.sh/upload && echo
+          done
+
+          # Verify files
+          ls -lAog /data
+          md5sum /data/*.avif
 
